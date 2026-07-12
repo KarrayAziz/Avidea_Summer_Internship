@@ -1,23 +1,43 @@
+import asyncio
 import json
 import os
 from typing import Any, Literal, Optional, Union
+
+from dotenv.main import logger
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from google import genai
 from google.genai import types
 from pydantic import BaseModel, ValidationError
 
+import subprocess
+import sys
+import tempfile
+import time
+import logging
+import re 
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("llava")
+
 from prompt import (
     STAGE1_SYSTEM,
     STAGE1_USER_MESSAGE_FULL,
     STAGE2_SYSTEM,
     STAGE2_USER_MESSAGE_FULL,
+    LOCAL_STAGE1_PROMPT,
 )
 
 from dotenv import load_dotenv
 
 # This searches for a .env file and loads its variables into system environment variables
 load_dotenv() 
+
+#LLAMA VARIABELS
+
+LLAVA_MODEL_PATH = "/home/aziz/Aziz/DigiCover/usingGeminiApi/llava-v1.6-mistral-7b.Q4_K_M.gguf"
+LLAVA_MMPROJ_PATH = "/home/aziz/Aziz/DigiCover/usingGeminiApi/mmproj-model-f16.gguf"
+LLAMA_CPP_BIN = "/home/aziz/.local/share/applications/llama.cpp/build/bin/llama-mtmd-cli"
+
 
 # 1. Environment & Global Client Instantiation (Crucial for Connection Pooling)
 MODEL_NAME = os.getenv("GEMINI_MODEL") # Enforce stable production flash model
@@ -30,6 +50,108 @@ if not GEMINI_API_KEY:
 client = genai.Client(api_key=GEMINI_API_KEY)
 
 app = FastAPI(title="Vehicle Verification API")
+
+def extract_json(text: str):
+    match = re.search(r"\{.*\}", text, re.DOTALL)
+    if not match:
+        return None
+    return match.group(0)
+
+def run_llama(command):
+    process = subprocess.Popen(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1
+    )
+
+    output_lines = []
+
+    for line in process.stdout:
+        print(line, end="")   # 👈 THIS prints live in your terminal
+        sys.stdout.flush()
+        output_lines.append(line)
+
+    process.wait()
+
+    return process.returncode, "".join(output_lines)
+
+
+async def call_local_llava(image: UploadFile) -> dict:
+
+    suffix = os.path.splitext(image.filename)[1]
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        image_bytes = await image.read()
+        tmp.write(image_bytes)
+        temp_path = tmp.name
+
+    try:
+        command = [
+            LLAMA_CPP_BIN,
+            "-m", LLAVA_MODEL_PATH,
+            "--mmproj", LLAVA_MMPROJ_PATH,
+            "--image", temp_path,
+            "-p", LOCAL_STAGE1_PROMPT,
+            "-n", "5",
+        ]
+
+        start_time = time.time()
+
+        # 🔥 STREAMING RUN (fix: real-time logs like terminal)
+        def run_llama(cmd):
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1
+            )
+
+            output_lines = []
+
+            for line in process.stdout:
+                print(line, end="")  # 👈 live logs in terminal
+                output_lines.append(line)
+
+            process.wait()
+
+            return process.returncode, "".join(output_lines)
+
+        returncode, raw_output = await asyncio.to_thread(run_llama, command)
+
+        end_time = time.time()
+
+        logger.info(f"LLaVA execution time: {end_time - start_time:.2f} seconds")
+
+        if returncode != 0:
+            raise HTTPException(
+                status_code=500,
+                detail=raw_output
+            )
+
+        # 🔥 JSON extraction
+        json_str = extract_json(raw_output)
+
+        if not json_str:
+            raise HTTPException(
+                status_code=500,
+                detail=f"No valid JSON found in LLaVA output: {raw_output}"
+            )
+
+        return {
+            **json.loads(json_str),
+            "latency_sec": end_time - start_time
+        }
+
+    finally:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+
+class LocalAuthenticityResponse(BaseModel):
+    is_real: bool
+    latency_sec: float
 
 # ==========================================
 # Pydantic Schemas (Kept clean as Codex designed)
@@ -155,7 +277,7 @@ async def verify_vehicle(images: list[UploadFile] = File(...)) -> VerifyVehicleR
         system_instruction=STAGE1_SYSTEM,
         user_message=STAGE1_USER_MESSAGE_FULL,
         image_parts=image_parts,
-    )
+    )   
     stage1 = validate_gemini_payload(Stage1Response, stage1_payload)
 
     # Short-circuit if fraud/mismatch is found
@@ -172,3 +294,23 @@ async def verify_vehicle(images: list[UploadFile] = File(...)) -> VerifyVehicleR
 
     # Return unified payload if everything passes
     return CombinedResponse(status=stage2.status, stage1=stage1, stage2=stage2)
+
+@app.post("/test-local-llava-authenticity")
+async def test_local_llava_authenticity(
+    image: UploadFile = File(...)
+):
+
+    if not image.content_type.startswith("image/"):
+        raise HTTPException(
+            status_code=400,
+            detail="File must be an image"
+        )
+
+    payload = await call_local_llava(image)
+
+    validated = validate_gemini_payload(
+        LocalAuthenticityResponse,
+        payload
+    )
+
+    return validated
