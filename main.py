@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+from functools import lru_cache
 from typing import Any, Literal, Optional, Union
 
 from dotenv.main import logger
@@ -18,6 +19,10 @@ import logging
 import re 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("llava")
+
+from models.embeddings.siglip2 import SigLIP2EmbeddingModel
+from models.tasks.view_classifier import ViewClassifier
+from models.utils.image import UnsupportedImageError, load_image_from_bytes
 
 from prompt import (
     STAGE1_SYSTEM,
@@ -52,6 +57,7 @@ client = genai.Client(api_key=GEMINI_API_KEY)
 app = FastAPI(title="Vehicle Verification API")
 
 def extract_json(text: str):
+
     match = re.search(r"\{.*\}", text, re.DOTALL)
     if not match:
         return None
@@ -152,6 +158,11 @@ async def call_local_llava(image: UploadFile) -> dict:
 class LocalAuthenticityResponse(BaseModel):
     is_real: bool
     latency_sec: float
+
+class ViewClassifierResponse(BaseModel):
+    prediction: Literal["front", "rear", "left", "right", "null"]
+    confidence: float
+    scores: dict[str, float]
 
 # ==========================================
 # Pydantic Schemas (Kept clean as Codex designed)
@@ -264,6 +275,25 @@ def validate_gemini_payload(model: type[BaseModel], payload: dict[str, Any]) -> 
             detail=f"Gemini JSON did not match the expected schema: {exc}",
         ) from exc
 
+@lru_cache(maxsize=1)
+def get_view_classifier() -> ViewClassifier:
+    embedding_model = SigLIP2EmbeddingModel(
+        model_id=os.getenv("SIGLIP2_MODEL", "google/siglip2-base-patch16-224"),
+        device=os.getenv("VIEW_CLASSIFIER_DEVICE") or None,
+    )
+    classifier = ViewClassifier(
+        embedding_model=embedding_model,
+        prompt_set=os.getenv("VIEW_CLASSIFIER_PROMPT_SET", "prompt_set_1"),
+        null_margin=float(os.getenv("VIEW_CLASSIFIER_NULL_MARGIN", "0.5")),
+    )
+    classifier.warmup()
+    return classifier
+
+
+def classify_view_image(image_bytes: bytes) -> dict[str, Any]:
+    image = load_image_from_bytes(image_bytes)
+    return get_view_classifier().classify(image).to_dict()
+
 # ==========================================
 # Endpoints
 # ==========================================
@@ -314,3 +344,18 @@ async def test_local_llava_authenticity(
     )
 
     return validated
+
+@app.post("/view-classifier", response_model=ViewClassifierResponse)
+async def view_classifier(image: UploadFile = File(...)) -> ViewClassifierResponse:
+    if not image.content_type or not image.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="File must be an image.")
+
+    image_bytes = await image.read()
+    try:
+        payload = await asyncio.to_thread(classify_view_image, image_bytes)
+    except UnsupportedImageError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    return ViewClassifierResponse.model_validate(payload)
