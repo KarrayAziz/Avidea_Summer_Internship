@@ -24,3 +24,7 @@ obj/
 # --- OS / misc ---
 .DS_Store
 models/
+custom_car_dataset/
+test_dataset_unseen/
+debug_results/
+failures/
