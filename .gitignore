@@ -10,6 +10,7 @@ __pycache__/
 
 # --- Machine learning / models ---
 *.gguf
+*.pt
 
 # --- Visual Studio (optional but safe) ---
 *.rsuser
@@ -28,3 +29,5 @@ custom_car_dataset/
 test_dataset_unseen/
 debug_results/
 failures/
+UsefulPhotos/
+output_crops/

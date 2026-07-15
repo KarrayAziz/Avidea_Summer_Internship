@@ -7,7 +7,7 @@ from torch.utils.data import DataLoader
 
 def run_benchmark():
     # 1. Configuration
-    BATCH_SIZE = 32  # You can change this to 1, 16, 32, or 64 to compare!
+    BATCH_SIZE = 64  # You can change this to 1, 16, 32, or 64 to compare!
     CLASS_NAMES = ['back', 'front', 'left', 'right']
     TEST_DATASET_DIR = Path("/home/aziz/Aziz/DigiCover/usingGeminiApi/test_dataset_unseen")
     WEIGHTS_PATH = Path("/home/aziz/Aziz/DigiCover/usingGeminiApi/scripts/vehicle_orientation_resnet18_finetuned.pth")
