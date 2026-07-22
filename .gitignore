@@ -24,6 +24,8 @@ obj/
 
 # --- OS / misc ---
 .DS_Store
+
+#folders to ignore
 models/
 custom_car_dataset/
 test_dataset_unseen/
@@ -31,3 +33,6 @@ debug_results/
 failures/
 UsefulPhotos/
 output_crops/
+data/
+torchreid/
+models/vehicle_Re-ID_Kaggle_result/

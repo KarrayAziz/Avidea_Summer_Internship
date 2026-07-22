@@ -1,196 +1,101 @@
-# Vehicle Verification API
+# Avidea Summer Internship - Vehicle Verification Pipeline
 
-FastAPI service for vehicle image validation. The existing Gemini and local
-llama.cpp endpoints are preserved, and the project now includes a model-agnostic
-local embedding path for benchmarking zero-shot computer vision subtasks.
+This repository contains a vehicle verification and analysis pipeline built during the Avidea internship. The work so far focuses on preparing image datasets, running vehicle-related computer vision tasks, and evaluating model outputs for tasks such as view classification, color mismatch detection, license plate extraction, match-group validation, and vehicle re-identification.
 
-## Architecture
+## What has been implemented
+
+The project currently includes:
+
+- Dataset preparation and validation scripts for raw, cropped, and inference image sets
+- View classification workflows for car images
+- Vehicle matching and grouping logic
+- License plate extraction support
+- Vehicle re-identification model assets and related code
+- Benchmarking and batch inference utilities for CPU-based experiments
+
+## Repository structure
 
 ```text
 models/
-  embeddings/
-    base.py        # EmbeddingModel interface
-    siglip2.py     # Google SigLIP 2 implementation
-  tasks/
-    prompts.py
-    view_classifier.py
-  benchmark/
-    benchmark_view.py
-    metrics.py
-    visualization.py
-  utils/
-    cache.py
-    image.py
+  vehicle_Re-ID_Kaggle_result/   # Re-ID model weights and training code
+  tasks/                          # task-specific logic such as view classification
+  utils/                          # shared image and caching helpers
+
+scripts/
+  avidea_tasks/
+    car_detection/
+    color_mismatch_detection/
+    license_plate_extraction/
+    match_group/
+    view_classification/
+  benchmarking/
+    batch_inference_cpu.py
+    benchmark_cpu.py
+  data_prep/
+    prepare_raw_dataset.py
+    prepare_cropped_dataset.py
+    prepare_inference_set.py
+    prepare_test_dataset.py
+    check_data_leakage.py
+    verify_Overlap.py
+    webp_to_jpeg.py
+
+prompt.py                         # prompt templates used for validation tasks
+requirements.txt
 ```
 
-Task modules depend only on `EmbeddingModel`. Model implementations do not know
-about vehicle tasks, labels, or benchmark folders.
+## Environment setup
 
-## Installation
+Create and activate a Python environment, then install dependencies:
 
 ```bash
-conda activate ml
+python -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Set the existing Gemini environment variables in `.env`:
+The project relies on PyTorch, torchvision-compatible tooling, Pillow, and other common ML dependencies listed in `requirements.txt`.
 
-```env
-GEMINI_API_KEY=...
-GEMINI_MODEL=...
-```
+## Data preparation workflow
 
-Optional local classifier settings:
-
-```env
-SIGLIP2_MODEL=google/siglip2-base-patch16-224
-VIEW_CLASSIFIER_PROMPT_SET=prompt_set_1
-VIEW_CLASSIFIER_DEVICE=cuda
-```
-
-If `VIEW_CLASSIFIER_DEVICE` is unset, SigLIP2 uses CUDA when available and CPU
-otherwise.
-
-For CPU-only SigLIP2 work, cache the model once:
+Several scripts are available to prepare and validate datasets before running inference:
 
 ```bash
-python -m scripts.download_siglip2
+python scripts/data_prep/prepare_raw_dataset.py
+python scripts/data_prep/prepare_cropped_dataset.py
+python scripts/data_prep/prepare_inference_set.py
+python scripts/data_prep/prepare_test_dataset.py
 ```
 
-Classify one image from the terminal:
+Additional checks are available for leakage and overlap analysis:
 
 ```bash
-python -m scripts.classify_view /path/to/car.jpg
+python scripts/data_prep/check_data_leakage.py
+python scripts/data_prep/verify_Overlap.py
 ```
 
-Both scripts default to `google/siglip2-base-patch16-224` and CPU inference.
-The classifier prints normalized `scores` plus SigLIP2 raw `raw_scores`; hide
-raw scores with `--hide-raw-scores`.
+## Running the main tasks
 
-For left/right side views, try the direction-aware prompt ensemble:
+The task-specific pipelines are organized under `scripts/avidea_tasks/`.
+
+### View classification
 
 ```bash
-python -m scripts.classify_view /path/to/car.jpg --prompt-set directional
+python scripts/avidea_tasks/view_classification/classify_one_folder_with_output.py
 ```
 
-The classifier only predicts `null` when its raw score is clearly ahead of the
-best vehicle-view score. Tune that margin when needed:
+### Cropped view classification
 
 ```bash
-python -m scripts.classify_view /path/to/car.jpg --null-margin 0.25
+python scripts/avidea_tasks/view_classification/crop_and_classify_one_folder.py
 ```
 
-## Running The API
+Other subtask folders contain the supporting logic for matching, plate extraction, and color-related validation.
 
-```bash
-uvicorn main:app --reload
-```
+## Model assets
 
-Existing endpoints remain available:
+Model weights and checkpoints are stored under `models/` and are used by the task scripts. Some of the larger model files are intentionally excluded from version control through the repository ignore rules.
 
-- `POST /verify-vehicle`
-- `POST /test-local-llava-authenticity`
+## Notes
 
-New endpoint:
-
-```bash
-curl -X POST "http://127.0.0.1:8000/view-classifier" \
-  -F "image=@/path/to/car.jpg"
-```
-
-Response:
-
-```json
-{
-  "prediction": "front",
-  "confidence": 0.52,
-  "scores": {
-    "front": 0.52,
-    "rear": 0.12,
-    "left": 0.18,
-    "right": 0.15,
-    "null": 0.03
-  }
-}
-```
-
-Supported image formats are `jpg`, `jpeg`, `png`, and `webp`. Images are
-converted to RGB automatically.
-
-## Benchmarking View Classification
-
-Expected dataset layout:
-
-```text
-dataset/
-  front/
-  rear/
-  left/
-  right/
-  null/
-```
-
-Run:
-
-```bash
-python -m models.benchmark.benchmark_view dataset \
-  --output-dir benchmark_outputs/view_classifier \
-  --model siglip2 \
-  --model-id google/siglip2-base-patch16-224 \
-  --prompt-set prompt_set_1
-```
-
-The benchmark recursively loads supported images, warms up the model, ignores
-the first measured inference for latency, and writes:
-
-- `results.csv`
-- `metrics.json`
-- `confusion_matrix.png`
-
-`results.csv` columns:
-
-```text
-filename,ground_truth,prediction,confidence,score_front,score_rear,score_left,score_right,score_null
-```
-
-Metrics include overall accuracy, per-class accuracy, precision, recall,
-F1-score, confusion matrix, average latency, median latency, P95 latency, and
-images/sec.
-
-## Adding Embedding Models
-
-Create a new file in `models/embeddings/` that implements
-`models.embeddings.base.EmbeddingModel`:
-
-```python
-class MyEmbeddingModel(EmbeddingModel):
-    def load(self): ...
-    def encode_image(self, image): ...
-    def encode_text(self, texts): ...
-    def similarity(self, image_embeddings, text_embeddings): ...
-```
-
-Keep model-specific preprocessing, device placement, batching, and embedding
-normalization inside the embedding implementation. Do not put task labels or
-vehicle-specific logic there.
-
-## Adding Prompt Sets
-
-Add a `PromptSet` in `models/tasks/prompts.py` and register it in
-`PROMPT_SETS`. Each view prompt set must provide:
-
-- `front`
-- `rear`
-- `left`
-- `right`
-- `null`
-
-Select it with `VIEW_CLASSIFIER_PROMPT_SET` or the benchmark `--prompt-set`
-argument.
-
-## Adding Tasks
-
-Create a new task file in `models/tasks/` and depend only on
-`EmbeddingModel`. A future task such as `is_real`, `is_car`, `matches_group`,
-`completeness`, or `plate OCR` should own its prompts and decision logic in the
-task layer, while reusing embedding implementations unchanged.
+This README is intended to reflect the current state of the repository and the workflow being developed for the internship project. As more scripts and models are added, this document can be expanded with the final training, evaluation, and deployment steps.
