@@ -12,9 +12,9 @@ from tqdm import tqdm
 from ultralytics import YOLO
 
 # 📌 Configuration paths
-TEST_DIR = "/home/aziz/Aziz/DigiCover/usingGeminiApi/data/Clean_Inference_Set"
-WEIGHTS_PATH = "/home/aziz/Aziz/DigiCover/usingGeminiApi/models/vehicle_orientation_resnet18_finetuned.pth"
-DEBUG_OUTPUT_DIR = "/home/aziz/Aziz/DigiCover/usingGeminiApi/scripts/avidea_tasks/view_classification/view_classification_results_debugging"
+TEST_DIR = "/home/aziz/Aziz/DigiCover/Avidea_Summer_Internship/data/Clean_Inference_Set"
+WEIGHTS_PATH = "/home/aziz/Aziz/DigiCover/Avidea_Summer_Internship/models/vehicle_orientation_resnet18_finetuned.pth"
+DEBUG_OUTPUT_DIR = "/home/aziz/Aziz/DigiCover/Avidea_Summer_Internship/scripts/avidea_tasks/view_classification/view_classification_results_debugging"
 BATCH_SIZE = 32
 
 # Pipeline (Applied dynamically after on-the-fly cropping)
@@ -38,7 +38,7 @@ class OnTheFlyCroppedDataset(Dataset):
         
         # Load YOLO model (Matches preprocessing script setup)
         print(f"🚀 Loading YOLOv8m for on-the-fly preprocessing...")
-        self.yolo_model = YOLO("/home/aziz/Aziz/DigiCover/usingGeminiApi/models/yolov8m.pt")
+        self.yolo_model = YOLO("/home/aziz/Aziz/DigiCover/Avidea_Summer_Internship/models/yolov8m.pt")
         self.confidence_threshold = confidence_threshold
         
         # Discover file paths manually to match ImageFolder functionality

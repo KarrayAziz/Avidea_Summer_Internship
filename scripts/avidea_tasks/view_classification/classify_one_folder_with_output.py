@@ -20,11 +20,11 @@ inference_transforms = transforms.Compose([
     transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
 ])
 
-WEIGHTS_PATH = "/home/aziz/Aziz/DigiCover/usingGeminiApi/models/vehicle_orientation_resnet18_finetuned.pth"
-YOLO_PATH = "/home/aziz/Aziz/DigiCover/usingGeminiApi/models/yolov8m.pt"
+WEIGHTS_PATH = "/home/aziz/Aziz/DigiCover/Avidea_Summer_Internship/models/vehicle_orientation_resnet18_finetuned.pth"
+YOLO_PATH = "/home/aziz/Aziz/DigiCover/Avidea_Summer_Internship/models/yolov8m.pt"
 
 # 📁 Output Directory Structure for Classifications
-CLASSIFIED_OUTPUT_DIR = "/home/aziz/Aziz/DigiCover/usingGeminiApi/scripts/avidea_tasks/view_classification/classified_output"
+CLASSIFIED_OUTPUT_DIR = "/home/aziz/Aziz/DigiCover/Avidea_Summer_Internship/scripts/avidea_tasks/view_classification/classified_output"
 
 BATCH_SIZE = 32
 CLASS_NAMES = ['back', 'front', 'left', 'right']
